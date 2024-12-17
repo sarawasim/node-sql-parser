@@ -1,0 +1,5 @@
+import "./postgres/postgresqlParsertest.js"
+import "./mysql/mysqlParsertest.js"
+import "./bigquery/bigqueryParsertest.js"
+import "./redshift/redshiftParsertest.js"
+import "./snowflake/snowflakeParsertest.js"

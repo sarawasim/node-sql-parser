@@ -1,0 +1,16 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+node_modules/
+dist/
+out/
+build/
+
+*.tsbuildinfo
+
+.env
+
+.vscode/
+
+package-lock.json

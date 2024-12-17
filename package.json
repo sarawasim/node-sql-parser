@@ -1,0 +1,26 @@
+{
+  "name": "quill-project",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "npx tsx index.ts",
+    "test": "npm run build && mocha 'dist/test/**/*.js'"
+  },
+  "type": "module",
+  "dependencies": {
+    "chai": "^5.1.2",
+    "lodash": "^4.17.21",
+    "node-sql-parser": "^5.3.5"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.0.1",
+    "@types/lodash": "^4.17.13",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.10.0",
+    "mocha": "^11.0.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.6.0",
+    "typescript": "^5.7.2"
+  }
+}
