@@ -9,9 +9,82 @@ type DatabaseOpt =
   | "redshift"
   | "bigquery"
 
+type Period = "days" | "weeks" | "months" | "quarters" | "years" | undefined
+
+type PeriodObj = {
+  period: Period | undefined
+  numberOfPeriods: number | undefined
+}
+
+const operatorsUsedInMerge = ["<", "<=", ">", ">=", "=", "+", "-"]
+
 const paths = {
+  redshift: {
+    column_ref: {
+      column: "column.expr.value",
+      functions: {
+        // year: "args.value[1].column.expr.value",
+        // month: "args.value[1].column.expr.value",
+      },
+      extract: "args.source.column.expr.value",
+    },
+    function: {
+      name: "name.name[0].value",
+    },
+    functions: {
+      dateadd: {
+        period: "args.value[0].column.expr.value",
+        interval: "args.value[1].value",
+      },
+    },
+  },
+  snowflake: {
+    column_ref: {
+      column: "column",
+      functions: {
+        year: "args.value[1].column",
+        month: "args.value[1].column",
+      },
+      extract: "args.source.column",
+    },
+    function: {
+      name: "name.name[0].value",
+    },
+    functions: {
+      dateadd: {
+        period: "args.value[0].column",
+        interval: "args.value[1].value",
+      },
+    },
+  },
+  bigquery: {
+    column_ref: {
+      column: "column",
+      functions: {
+        year: "args.value[1].column",
+        month: "args.value[1].column",
+        parse_timestamp: "args.value[1].column",
+        // timestamp_trunc: "args.value[0].column",
+      },
+      extract: "args.source.column",
+    },
+    function: {
+      name: "name.schema.value",
+    },
+    functions: {},
+  },
   mysql: {
-    column: "type.column_ref",
+    column_ref: {
+      column: "column",
+      functions: {
+        year: "args.value[1].column",
+        month: "args.value[1].column",
+      },
+    },
+    function: {
+      name: "name.name[0].value",
+    },
+    functions: {},
   },
   postgresql: {
     column_ref: {
@@ -24,6 +97,7 @@ const paths = {
     function: {
       name: "name.name[0].value",
     },
+    functions: {},
   },
 }
 
@@ -42,11 +116,10 @@ function getDateFiltersFromSQLQuery({
   const whereClause = ast.where
 
   console.log(JSON.stringify(whereClause, null, 2))
-
   if (whereClause) {
     return getDateFiltersFromBinaryExpression(whereClause, database)
   }
-  // console.log("Filters: ", filters)
+
   return filters
 }
 
@@ -65,60 +138,52 @@ function getNestedValue(obj: any, path: string): any {
   return nestedValue
 }
 
-// function exploreExpressions(
-//   expr: any,
-//   filters: DateFilter[],
-//   engine: DatabaseOpt
-// ): void {
-//   if (!expr) return
-
-//   if (expr.type === "binary_expr") {
-//     getDateFiltersFromBinaryExpression(expr, engine)
-//   } else {
-//     getDateFiltersFromFunction(expr, engine)
-//   }
-// }
-
 function mergeFilters(filter1, filter2) {
   return {
-    period: filter1?.period || filter2?.period,
-    numberOfPeriods: filter1?.numberOfPeriods || filter2?.numberOfPeriods || 1,
     type: filter1?.type || filter2?.type,
+    numberOfPeriods: filter1?.numberOfPeriods || filter2?.numberOfPeriods || 1,
+    period: filter1?.period || filter2?.period,
     field: filter1?.field || filter2?.field,
   }
 }
-
-const operatorsUsedInMerge = ["<", "<=", ">", ">=", "=", "+", "-"]
 
 function getDateFiltersFromBinaryExpression(
   expr: any,
   engine: DatabaseOpt
 ): DateFilter[] {
-  const exprType = expr.type
-  const column = getColumnName(expr, engine)
-  const filters = []
-  const filtersToProcess = []
+  const column: string | undefined = getColumnName(expr, engine)
+  const filters: DateFilter[] = []
+  const filtersToProcess: DateFilter[] = []
 
-  let period = undefined
+  let period: PeriodObj | undefined
 
-  if (exprType === "extract") {
-    exploreExtract(expr, engine)
-  } else if (exprType === "binary_expr") {
-    const left = getDateFiltersFromBinaryExpression(expr.left, engine)
-    const right = getDateFiltersFromBinaryExpression(expr.right, engine)
+  switch (expr.type) {
+    case "extract":
+      filtersToProcess.push(...getDateFiltersFromExtract(expr, engine))
+      break
 
-    if (operatorsUsedInMerge.includes(expr.operator)) {
-      const merge = mergeFilters(left[left.length - 1], right[right.length - 1])
-      filtersToProcess.push(merge)
-    } else {
-      filtersToProcess.push(...left)
-      filtersToProcess.push(...right)
-    }
-  } else if (exprType === "function") {
-    filtersToProcess.push(...getDateFiltersFromFunction(expr, engine))
-  } else if (exprType === "interval") {
-    period = getPeriod(expr, engine)
+    case "binary_expr":
+      const left = getDateFiltersFromBinaryExpression(expr.left, engine)
+      const right = getDateFiltersFromBinaryExpression(expr.right, engine)
+
+      if (operatorsUsedInMerge.includes(expr.operator)) {
+        const merge = mergeFilters(left.pop(), right.pop())
+        filtersToProcess.push(merge)
+      } else {
+        filtersToProcess.push(...left)
+        filtersToProcess.push(...right)
+      }
+      break
+
+    case "function":
+      filtersToProcess.push(...getDateFiltersFromFunction(expr, engine))
+      break
+
+    case "interval":
+      period = getPeriod(expr, engine)
+      break
   }
+
   filtersToProcess.forEach((filter) => {
     if (!filter.field) {
       filter.field = column
@@ -133,9 +198,10 @@ function getDateFiltersFromBinaryExpression(
   })
   if (filters.length === 0 && (column || period)) {
     filters.push({
-      field: column,
-      period: period?.period,
+      type: undefined,
       numberOfPeriods: period?.numberOfPeriods,
+      period: period?.period,
+      field: column,
     })
   }
 
@@ -146,22 +212,60 @@ function getDateFiltersFromFunction(
   expr: any,
   engine: DatabaseOpt
 ): DateFilter[] {
-  const filters = []
-  const filtersToProcess = []
-  let column = ""
-  let period = ""
+  const filters: DateFilter[] = []
+  const filtersToProcess: DateFilter[] = []
+  let column: string | undefined = ""
+  let periodObj: PeriodObj | undefined
+  const functionName = getNestedValue(expr, paths[engine].function.name)
+
+  switch (functionName) {
+    case "YEAR":
+    case "MONTH":
+      periodObj = {
+        period: getPeriodFormatted(functionName.toLowerCase()),
+        numberOfPeriods: 1,
+      }
+      break
+    case "DATEADD":
+      const period = getPeriodFormatted(
+        getNestedValue(
+          expr,
+          paths[engine].functions[functionName.toLowerCase()].period
+        ).toLowerCase()
+      )
+      const numberOfPeriods = Math.abs(
+        getNestedValue(
+          expr,
+          paths[engine].functions[functionName.toLowerCase()].interval
+        )
+      )
+      periodObj = {
+        period,
+        numberOfPeriods,
+      }
+      break
+  }
 
   expr.args?.value.forEach((arg) => {
-    if (arg.type === "binary_expr") {
-      filtersToProcess.push(...getDateFiltersFromBinaryExpression(arg, engine))
-    } else if (arg.type === "function") {
-      filtersToProcess.push(...getDateFiltersFromFunction(arg, engine))
-    } else if (arg.type === "column_ref") {
-      column = getColumnName(arg, engine)
-    } else if (arg.type === "single_quote_string") {
-      period = getPeriod(arg, engine)
-    } else if (arg.type === "interval") {
-      period = getPeriod(arg, engine)
+    switch (arg.type) {
+      case "binary_expr":
+        filtersToProcess.push(
+          ...getDateFiltersFromBinaryExpression(arg, engine)
+        )
+        break
+
+      case "function":
+        filtersToProcess.push(...getDateFiltersFromFunction(arg, engine))
+        break
+
+      case "column_ref":
+        column = getColumnName(arg, engine)
+        break
+
+      case "single_quote_string":
+      case "interval":
+        periodObj = getPeriod(arg, engine)
+        break
     }
   })
 
@@ -170,38 +274,76 @@ function getDateFiltersFromFunction(
       filter.field = column
     }
     if (!filter.period) {
-      filter.period = period?.period
+      filter.period = periodObj?.period
     }
     if (!filter.numberOfPeriods) {
-      filter.numberOfPeriods = period?.numberOfPeriods
+      filter.numberOfPeriods = periodObj?.numberOfPeriods
     }
     filters.push(filter)
   })
-  if (filters.length === 0 && (column || period)) {
+  if (filters.length === 0 && (column || periodObj)) {
     filters.push({
+      type: undefined,
+      numberOfPeriods: periodObj?.numberOfPeriods,
+      period: periodObj?.period,
       field: column,
-      period: period?.period,
-      numberOfPeriods: period?.numberOfPeriods,
     })
   }
   return filters
 }
 
-function exploreExtract(expr: any, filters: DateFilter[], engine: DatabaseOpt) {
-  if (!expr) return
-  let columnRef = getColumnName(expr, engine)
-  if (expr.args.source.type === "binary_expr") {
-    getDateFiltersFromBinaryExpression(expr.args.source, filters, engine)
+function getDateFiltersFromExtract(
+  expr: any,
+  engine: DatabaseOpt
+): DateFilter[] {
+  const filters: DateFilter[] = []
+  const filtersToProcess: DateFilter[] = []
+  let column: string | undefined = ""
+  let period: Period
+
+  switch (expr.args.source.type) {
+    case "column_ref":
+      column = getColumnName(expr, engine)
+      break
+    case "binary_expr":
+      const binaryFilters = getDateFiltersFromBinaryExpression(
+        expr.args.source,
+        engine
+      )
+      filtersToProcess.push(...binaryFilters)
+      break
+    case "function":
+      const functionFilters = getDateFiltersFromFunction(
+        expr.args.source,
+        engine
+      )
+      filtersToProcess.push(...functionFilters)
+      break
+    default:
+      break
   }
-  return columnRef
-}
 
-function parseDateFilter(expr: any, engine: DatabaseOpt): DateFilter | null {
-  const type = getType(expr.operator)
-  const numberOfPeriods = getNumberOfPeriods(expr, engine)
-  const period = getPeriod(expr, engine)
-
-  return { type, numberOfPeriods, period, field: "" }
+  if (expr.args.field) {
+    period = getPeriodFormatted(expr.args.field.toLowerCase())
+  }
+  filtersToProcess.forEach((filter) => {
+    if (!filter.field) {
+      filter.field = column
+    }
+    if (!filter.period) {
+      filter.period = period
+    }
+    filters.push(filter)
+  })
+  if (filters.length === 0 && (column || period)) {
+    filters.push({
+      type: undefined,
+      numberOfPeriods: undefined,
+      period: period,
+      field: column,
+    })
+  }
+  return filters
 }
 
 function getType(
@@ -219,41 +361,30 @@ function getType(
   }
 }
 
-function getPeriod(expr: any, engine: DatabaseOpt) {
+function getPeriod(
+  expr: any,
+  engine: DatabaseOpt,
+  unit?: string
+): PeriodObj | undefined {
+  console.log(JSON.stringify(expr, null, 2))
+
   if (expr.type === "interval") {
-    return getPeriod(expr.expr)
+    return getPeriod(expr.expr, engine, expr.unit)
   }
-  if (expr.type !== "single_quote_string") return
-  const split = expr.value.split(" ")
-  let numberOfPeriods = undefined
-  if (split.length > 1) {
-    numberOfPeriods = parseInt(split[0])
+
+  switch (expr.type) {
+    case "number":
+      return {
+        period: getPeriodFormatted(unit!),
+        numberOfPeriods: expr.value,
+      }
+    case "single_quote_string":
+      const split = expr.value.split(" ")
+      const numberOfPeriods = split.length > 1 ? parseInt(split[0]) : undefined
+      const period = getPeriodFormatted(split.pop().toLowerCase())
+      return { period, numberOfPeriods }
   }
-  const period = split[split.length - 1]
-  return { numberOfPeriods, period }
 }
-
-/*
-const paths = {
-  mysql: {
-    column: "type.column_ref",
-  },
-  postgresql: {
-    column_ref: {
-      column: "column.expr.value",
-      functions: {
-        date_trunc: "args.value[1].column.expr.value",
-      },
-      extract: "args.source.column.expr.value",
-      binary_expr: "column.value",
-    },
-    function: {
-      name: "name.name[0].value",
-    },
-  },
-}
-
-*/
 
 function getColumnName(expr: any, engine: DatabaseOpt): string | undefined {
   const exprType = expr.type
@@ -289,13 +420,14 @@ function getColumnNameFromFunction(
   expr: any,
   engine: DatabaseOpt
 ): string | undefined {
-  if (!expr.args) return
-  Object.entries(expr.args.value).forEach((arg) => {
+  if (!expr.args?.value) return
+  expr.args.value.forEach((arg) => {
     if (arg.type === "column_ref") {
       const functionName = getNestedValue(
         expr,
         paths[engine].function.name
       )?.toLowerCase()
+      if (functionName === "dateadd") return
       return getNestedValue(
         expr,
         paths[engine].column_ref.functions[functionName]
@@ -306,13 +438,16 @@ function getColumnNameFromFunction(
 }
 
 function getColumnNameFromExtract(expr: any, engine: DatabaseOpt) {
-  if (expr.args.source.type === "column_ref") {
-    return getNestedValue(expr, paths[engine].extract)
+  if (
+    expr.args.source.type === "column_ref" &&
+    "extract" in paths[engine]?.column_ref
+  ) {
+    return getNestedValue(expr, paths[engine].column_ref.extract)
   }
   return undefined
 }
 
-function getPeriodFormatted(period: string) {
+function getPeriodFormatted(period: string): Period {
   switch (period) {
     case "day":
     case "days":
@@ -323,6 +458,9 @@ function getPeriodFormatted(period: string) {
     case "month":
     case "months":
       return "months"
+    case "year":
+    case "years":
+      return "years"
     case "quarter":
     case "quarters":
       return "quarters"
@@ -331,8 +469,9 @@ function getPeriodFormatted(period: string) {
 
 const sqlQuery = `SELECT *
 FROM transactions
-WHERE EXTRACT(MONTH FROM transaction_date) = EXTRACT(MONTH FROM CURRENT_DATE - INTERVAL '1 month')
-  AND EXTRACT(YEAR FROM transaction_date) = EXTRACT(YEAR FROM CURRENT_DATE - INTERVAL '1 month')`
+WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 month'`
 
 const filters = getDateFiltersFromSQLQuery({ sqlQuery, database: "postgresql" })
 console.log(filters)
+
+// snowflake: last_day
