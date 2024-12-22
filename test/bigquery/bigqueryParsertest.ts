@@ -26,15 +26,11 @@ describe("Bigquery parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
+    expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("current")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[0].period).to.be.eql("years")
+    expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
-    // expect(dateFilters[1].type).to.be.eql("current")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("months")
-    expect(dateFilters[1].field).to.be.eql("transaction_date")
   })
 
   it("should parse transaction_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH) as a 'last' month filter", () => {

@@ -26,14 +26,10 @@ describe("Redshift parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
+    expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("current")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
-    expect(dateFilters[0].field).to.be.eql("transaction_date")
-    // expect(dateFilters[1].type).to.be.eql("current")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("years")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
   })
 
@@ -46,15 +42,11 @@ describe("Redshift parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
+    expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("current")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
-    // expect(dateFilters[1].type).to.be.eql("current")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("months")
-    expect(dateFilters[1].field).to.be.eql("transaction_date")
   })
 
   it("should parse transaction_date >= DATEADD(day, -90, GETDATE()) as a 'last' 90 days filter", () => {
@@ -68,7 +60,7 @@ describe("Redshift parser", () => {
 
     expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("last")
-    expect(dateFilters[0].numberOfPeriods).to.be.eql(90)
+    expect(dateFilters[0].numberOfPeriods).to.be.eql(-90)
     expect(dateFilters[0].period).to.be.eql("days")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
   })
@@ -84,7 +76,7 @@ describe("Redshift parser", () => {
 
     expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("last")
-    expect(dateFilters[0].numberOfPeriods).to.be.eql(90)
+    expect(dateFilters[0].numberOfPeriods).to.be.eql(-90)
     expect(dateFilters[0].period).to.be.eql("days")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
   })
@@ -98,14 +90,10 @@ describe("Redshift parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
-    // expect(dateFilters[0].type).to.be.eql("last")
+    expect(dateFilters).to.have.length(1)
+    // expect(dateFilters[0].type).to.be.eql("previous")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
-    expect(dateFilters[0].field).to.be.eql("transaction_date")
-    // expect(dateFilters[1].type).to.be.eql("previous")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
   })
 })

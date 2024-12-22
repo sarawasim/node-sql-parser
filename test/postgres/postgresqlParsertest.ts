@@ -33,7 +33,7 @@ describe("Postgresql parser", () => {
     expect(dateFilters[0].field).to.be.eql("transaction_date")
   })
 
-  it("should parse created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month') as a two 'current' month filters", () => {
+  it("should parse created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month') as a 'current' month filters", () => {
     const sqlQuery =
       "SELECT * FROM transactions WHERE created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')"
 
@@ -42,15 +42,11 @@ describe("Postgresql parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
+    expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("current")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("created_at")
-    // expect(dateFilters[1].type).to.be.eql("current")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("months")
-    expect(dateFilters[1].field).to.be.eql("created_at")
   })
 
   it("should parse transaction_date >= CURRENT_DATE - INTERVAL '1 month' as a 'last' 1 month filter", () => {
@@ -126,14 +122,30 @@ describe("Postgresql parser", () => {
       database,
     })
 
-    expect(dateFilters).to.have.length(2)
+    expect(dateFilters).to.have.length(1)
     // expect(dateFilters[0].type).to.be.eql("previous")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
-    // expect(dateFilters[1].type).to.be.eql("previous")
-    expect(dateFilters[1].numberOfPeriods).to.be.eql(1)
-    expect(dateFilters[1].period).to.be.eql("years")
-    expect(dateFilters[1].field).to.be.eql("transaction_date")
+  })
+
+  it("should parse (created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')) OR (created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '3 day')) as a 'current' month and a 'current' day filter", () => {
+    const sqlQuery =
+      "SELECT * FROM transactions WHERE (created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')) OR (created_at >= date_trunc('month', CURRENT_DATE) AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '3 day'))"
+
+    const dateFilters = getDateFiltersFromSQLQuery({
+      sqlQuery,
+      database,
+    })
+
+    expect(dateFilters).to.have.length(2)
+    // expect(dateFilters[0].type).to.be.eql("current")
+    expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
+    expect(dateFilters[0].period).to.be.eql("months")
+    expect(dateFilters[0].field).to.be.eql("created_at")
+    // expect(dateFilters[1].type).to.be.eql("current")
+    expect(dateFilters[1].numberOfPeriods).to.be.eql(3)
+    expect(dateFilters[1].period).to.be.eql("days")
+    expect(dateFilters[1].field).to.be.eql("created_at")
   })
 })

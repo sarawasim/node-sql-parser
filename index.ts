@@ -16,7 +16,36 @@ type PeriodObj = {
   numberOfPeriods: number | undefined
 }
 
-const operatorsUsedInMerge = ["<", "<=", ">", ">=", "=", "+", "-"]
+const operatorsUsedInMerge = [
+  "<",
+  "<=",
+  ">",
+  ">=",
+  "=",
+  "+",
+  "-",
+  "AND",
+  "BETWEEN",
+]
+
+const timeMapper = {
+  second: 1,
+  seconds: 1,
+  minute: 60,
+  minutes: 60,
+  hour: 3600,
+  hours: 3600,
+  day: 86400,
+  days: 86400,
+  week: 604800,
+  weeks: 604800,
+  month: 2592000,
+  months: 2592000,
+  quarter: 1036800,
+  quarters: 1036800,
+  year: 31536000,
+  years: 31536000,
+}
 
 const paths = {
   redshift: {
@@ -117,8 +146,12 @@ export function getDateFiltersFromSQLQuery({
       database
     )
     filtersToProcess.forEach((filter) => {
-      if (filter.field && filter.period && filter.numberOfPeriods)
+      if (filter.period && filter.field) {
+        if (!filter.numberOfPeriods) {
+          filter.numberOfPeriods = 1
+        }
         filters.push(filter)
+      }
     })
   }
 
@@ -141,11 +174,56 @@ function getNestedValue(obj: any, path: string): any {
 }
 
 function mergeFilters(filter1, filter2) {
+  const refinedPeriod = getRefinedPeriod(filter1, filter2)
   return {
     type: filter1?.type || filter2?.type,
-    numberOfPeriods: filter1?.numberOfPeriods || filter2?.numberOfPeriods || 1,
-    period: filter1?.period || filter2?.period,
+    numberOfPeriods: refinedPeriod.numberOfPeriods,
+    period: refinedPeriod.period,
     field: filter1?.field || filter2?.field,
+  }
+}
+
+function getRefinedPeriod(filter1, filter2) {
+  if (!filter1 && !filter2) return {}
+  if (!filter1) return filter2
+  if (!filter2) return filter1
+
+  if (!filter1.period) {
+    return {
+      period: filter2.period,
+      numberOfPeriods: filter2.numberOfPeriods || filter1.numberOfPeriods,
+    }
+  }
+  if (!filter2.period) {
+    return {
+      period: filter1.period,
+      numberOfPeriods: filter1.numberOfPeriods || filter2.numberOfPeriods,
+    }
+  }
+  const duration1 = (filter1.numberOfPeriods || 1) * timeMapper[filter1.period]
+  const duration2 = (filter2.numberOfPeriods || 1) * timeMapper[filter2.period]
+
+  if (duration1 < duration2) {
+    return {
+      period: filter1.period,
+      numberOfPeriods: filter1.numberOfPeriods,
+    }
+  } else if (duration2 < duration1) {
+    return {
+      period: filter2.period,
+      numberOfPeriods: filter2.numberOfPeriods,
+    }
+  } else {
+    if (filter2.numberOfPeriods < filter1.numberOfPeriods) {
+      return {
+        period: filter2.period,
+        numberOfPeriods: filter2.numberOfPeriods,
+      }
+    }
+    return {
+      period: filter1.period,
+      numberOfPeriods: filter1.numberOfPeriods,
+    }
   }
 }
 
@@ -241,12 +319,11 @@ function getDateFiltersFromFunction(
           paths[engine].functions[functionName.toLowerCase()].period
         ).toLowerCase()
       )
-      const numberOfPeriods = Math.abs(
-        getNestedValue(
-          expr,
-          paths[engine].functions[functionName.toLowerCase()].interval
-        )
+      const numberOfPeriods = getNestedValue(
+        expr,
+        paths[engine].functions[functionName.toLowerCase()].interval
       )
+
       periodObj = {
         period,
         numberOfPeriods,
