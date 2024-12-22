@@ -22,10 +22,7 @@ const paths = {
   redshift: {
     column_ref: {
       column: "column.expr.value",
-      functions: {
-        // year: "args.value[1].column.expr.value",
-        // month: "args.value[1].column.expr.value",
-      },
+      functions: {},
       extract: "args.source.column.expr.value",
     },
     function: {
@@ -61,10 +58,8 @@ const paths = {
     column_ref: {
       column: "column",
       functions: {
-        year: "args.value[1].column",
-        month: "args.value[1].column",
         parse_timestamp: "args.value[1].column",
-        // timestamp_trunc: "args.value[0].column",
+        timestamp_trunc: "args.value[0].column",
       },
       extract: "args.source.column",
     },
@@ -101,7 +96,7 @@ const paths = {
   },
 }
 
-function getDateFiltersFromSQLQuery({
+export function getDateFiltersFromSQLQuery({
   sqlQuery,
   database,
 }: {
@@ -115,9 +110,16 @@ function getDateFiltersFromSQLQuery({
   // @ts-ignore
   const whereClause = ast.where
 
-  console.log(JSON.stringify(whereClause, null, 2))
+  // console.log(JSON.stringify(whereClause, null, 2))
   if (whereClause) {
-    return getDateFiltersFromBinaryExpression(whereClause, database)
+    const filtersToProcess = getDateFiltersFromBinaryExpression(
+      whereClause,
+      database
+    )
+    filtersToProcess.forEach((filter) => {
+      if (filter.field && filter.period && filter.numberOfPeriods)
+        filters.push(filter)
+    })
   }
 
   return filters
@@ -182,6 +184,12 @@ function getDateFiltersFromBinaryExpression(
     case "interval":
       period = getPeriod(expr, engine)
       break
+    case "expr_list":
+      expr.value.forEach((arg) => {
+        filtersToProcess.push(
+          ...getDateFiltersFromBinaryExpression(arg, engine)
+        )
+      })
   }
 
   filtersToProcess.forEach((filter) => {
@@ -259,13 +267,25 @@ function getDateFiltersFromFunction(
         break
 
       case "column_ref":
-        column = getColumnName(arg, engine)
+        // required for bigQuery TIMESTAMP_TRUNC because MONTH/DAY/YEAR is a column_ref for some reason
+        if (!column) {
+          column = getColumnName(arg, engine)
+        }
         break
 
       case "single_quote_string":
       case "interval":
         periodObj = getPeriod(arg, engine)
         break
+      case "string":
+        if (functionName === "PARSE_TIMESTAMP") {
+          const timestamp = arg.value
+          const lastLetter = timestamp.charAt(timestamp.length - 1)
+          periodObj = {
+            period: getPeriodFormatted(lastLetter),
+            numberOfPeriods: 1,
+          }
+        }
     }
   })
 
@@ -366,8 +386,6 @@ function getPeriod(
   engine: DatabaseOpt,
   unit?: string
 ): PeriodObj | undefined {
-  console.log(JSON.stringify(expr, null, 2))
-
   if (expr.type === "interval") {
     return getPeriod(expr.expr, engine, expr.unit)
   }
@@ -451,15 +469,18 @@ function getPeriodFormatted(period: string): Period {
   switch (period) {
     case "day":
     case "days":
+    case "D":
       return "days"
     case "week":
     case "weeks":
       return "weeks"
     case "month":
     case "months":
+    case "M":
       return "months"
     case "year":
     case "years":
+    case "Y":
       return "years"
     case "quarter":
     case "quarters":
@@ -469,9 +490,8 @@ function getPeriodFormatted(period: string): Period {
 
 const sqlQuery = `SELECT *
 FROM transactions
-WHERE transaction_date >= CURRENT_DATE - INTERVAL '1 month'`
+WHERE created_at >= date_trunc('month', CURRENT_DATE)
+AND created_at < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')`
 
 const filters = getDateFiltersFromSQLQuery({ sqlQuery, database: "postgresql" })
 console.log(filters)
-
-// snowflake: last_day
