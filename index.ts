@@ -187,9 +187,17 @@ function getNestedValue(obj: any, path: string): any {
   }
 }
 
-function mergeFilters(filter1, filter2, operator) {
+function mergeFilters(
+  filter1: DateFilter,
+  filter2: DateFilter,
+  operator: string
+) {
   const refinedPeriod = getRefinedPeriod(filter1, filter2)
-  const type = processType(filter1, filter2, operator)
+  const type: "previous" | "last" | "current" | "next" = processType(
+    filter1,
+    filter2,
+    operator
+  )
   return {
     truncatedDate: filter1?.truncatedDate || filter2?.truncatedDate,
     type: type,
@@ -240,7 +248,8 @@ function getDateFiltersFromBinaryExpression(
   const filters: DateFilter[] = []
   const filtersToProcess: DateFilter[] = []
 
-  let period: PeriodObj | undefined
+  let periodObj: PeriodObj | undefined
+  let intervalTime = undefined
 
   switch (expr.type) {
     case "extract":
@@ -257,7 +266,61 @@ function getDateFiltersFromBinaryExpression(
       break
 
     case "interval":
-      period = getPeriod(expr, engine)
+      periodObj = getPeriod(expr, engine)
+      intervalTime = new Date(now)
+
+      switch (periodObj.period) {
+        case "months":
+          if (expr.operator === "+") {
+            intervalTime.setMonth(
+              intervalTime.getMonth() + (periodObj.numberOfPeriods || 0)
+            )
+          } else {
+            intervalTime.setMonth(
+              intervalTime.getMonth() - (periodObj.numberOfPeriods || 0)
+            )
+          }
+        case "days":
+          if (expr.operator === "+") {
+            intervalTime.setDate(
+              intervalTime.getDate() + (periodObj.numberOfPeriods || 0)
+            )
+          } else {
+            intervalTime.setDate(
+              intervalTime.getDate() - (periodObj.numberOfPeriods || 0)
+            )
+          }
+        case "weeks":
+          if (expr.operator === "+") {
+            intervalTime.setDate(
+              intervalTime.getDate() + 7 * (periodObj.numberOfPeriods || 0)
+            )
+          } else {
+            intervalTime.setDate(
+              intervalTime.getDate() - 7 * (periodObj.numberOfPeriods || 0)
+            )
+          }
+        case "years":
+          if (expr.operator === "+") {
+            intervalTime.setFullYear(
+              intervalTime.getFullYear() + (periodObj.numberOfPeriods || 0)
+            )
+          } else {
+            intervalTime.setFullYear(
+              intervalTime.getFullYear() - (periodObj.numberOfPeriods || 0)
+            )
+          }
+        case "quarters":
+          if (expr.operator === "+") {
+            intervalTime.setMonth(
+              intervalTime.getMonth() + 3 * (periodObj.numberOfPeriods || 0)
+            )
+          } else {
+            intervalTime.setMonth(
+              intervalTime.getMonth() - 3 * (periodObj.numberOfPeriods || 0)
+            )
+          }
+      }
       break
     case "expr_list":
       expr.value.forEach((arg) => {
@@ -272,18 +335,22 @@ function getDateFiltersFromBinaryExpression(
       filter.field = column
     }
     if (!filter.period) {
-      filter.period = period?.period
+      filter.period = periodObj?.period
     }
     if (!filter.numberOfPeriods) {
-      filter.numberOfPeriods = period?.numberOfPeriods
+      filter.numberOfPeriods = periodObj?.numberOfPeriods
+    }
+    if (intervalTime) {
+      filter.truncatedDate = intervalTime
     }
     filters.push(filter)
   })
-  if (filters.length === 0 && (column || period)) {
+  if (filters.length === 0 && (column || periodObj)) {
     filters.push({
       type: undefined,
-      numberOfPeriods: period?.numberOfPeriods,
-      period: period?.period,
+      numberOfPeriods: periodObj?.numberOfPeriods,
+      period: periodObj?.period,
+      truncatedDate: intervalTime,
       field: column,
     })
   }
@@ -300,44 +367,68 @@ function processType(
   let actualTime1 = dateFilter1.truncatedDate
   let actualTime2 = dateFilter2.truncatedDate
 
-  console.log("date filter 1: ", JSON.stringify(dateFilter1, null, 2))
-  console.log("date filter 2: ", JSON.stringify(dateFilter2, null, 2))
-
-  console.log("operator: ", operator)
   if (!actualTime1 && !actualTime2) return
-  switch (dateFilter1.period) {
-    case "months":
-      actualTime1.setMonth(
-        actualTime1.getMonth() - (dateFilter1.numberOfPeriods || 1)
-      )
+  if (dateFilter1.period && actualTime1) {
+    actualTime1 = truncateDate(actualTime1, dateFilter1.period)
   }
-  switch (dateFilter2.period) {
-    case "months":
-      actualTime2.setMonth(
-        actualTime2.getMonth() - (dateFilter2.numberOfPeriods || 1)
-      )
+  if (dateFilter2.period && actualTime2) {
+    actualTime2 = truncateDate(actualTime2, dateFilter2.period)
   }
   switch (operator) {
     case "<":
     case "<=":
+      if (!actualTime1) {
+        return "previous"
+      }
+      if (!actualTime2) {
+        return "last"
+      }
       if (actualTime1.getTime() === actualTime2.getTime()) {
         return "last"
       } else if (actualTime1.getTime() < actualTime2.getTime()) {
         return "previous"
       }
+      break
     case "=":
     case "BETWEEN":
-      console.log("actualTime1: ", actualTime1)
-      console.log("actualTime2: ", actualTime2)
-      console.log("isEqual", actualTime1.getTime() == actualTime2.getTime())
-      if (actualTime1.getTime() == actualTime2.getTime()) {
+      if (actualTime1?.getTime() == actualTime2?.getTime()) {
         return "current"
+      } else if (
+        dateFilter1.field &&
+        actualTime1?.getTime() > actualTime2?.getTime()
+      ) {
+        return "previous"
+      } else if (
+        dateFilter2.field &&
+        actualTime2?.getTime() > actualTime1?.getTime()
+      ) {
+        return "previous"
+      } else if (
+        dateFilter1.field &&
+        actualTime1?.getTime() < actualTime2?.getTime()
+      ) {
+        return "next"
+      } else if (
+        dateFilter2.field &&
+        actualTime2?.getTime() < actualTime1?.getTime()
+      ) {
+        return "next"
       }
+      break
     case ">":
     case ">=":
+      if (!actualTime1) {
+        return "last"
+      }
+      if (!actualTime2) {
+        return "next"
+      }
       if (actualTime1.getTime() >= actualTime2.getTime()) {
         return "next"
       }
+      break
+    default:
+      return undefined
   }
 }
 
@@ -359,7 +450,6 @@ function processBinaryExpression(expr: any, engine: DatabaseOpt): DateFilter[] {
 
 function truncateDate(date: Date, period: string) {
   date.setHours(0, 0, 0, 0)
-  console.log("period: ", period)
   switch (period) {
     case "days":
       return new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -416,7 +506,6 @@ function getDateFiltersFromFunction(
       }
       break
   }
-
   expr.args?.value.forEach((arg) => {
     switch (arg.type) {
       case "binary_expr":
@@ -450,13 +539,10 @@ function getDateFiltersFromFunction(
     }
   })
 
-  let truncatedDate = undefined
+  let truncatedDate: Date = undefined
 
-  if (functionName.toLowerCase().includes("trunc")) {
-    console.log(1111)
-    truncatedDate = truncateDate(new Date(now), periodObj.period)
-    console.log("truncatedDate: ", truncatedDate)
-    console.log("now: ", now)
+  if (functionName?.toLowerCase().includes("trunc")) {
+    truncatedDate = truncateDate(new Date(now), periodObj?.period)
   }
 
   filtersToProcess.forEach((filter) => {
@@ -469,7 +555,15 @@ function getDateFiltersFromFunction(
     if (!filter.numberOfPeriods) {
       filter.numberOfPeriods = periodObj?.numberOfPeriods
     }
-    if (truncatedDate) {
+    if (!filter.truncatedDate) {
+      filter.truncatedDate = truncatedDate
+    } else {
+      if (functionName?.toLowerCase().includes("trunc")) {
+        truncatedDate = truncateDate(
+          new Date(filter.truncatedDate),
+          periodObj?.period
+        )
+      }
       filter.truncatedDate = truncatedDate
     }
     filters.push(filter)
@@ -646,9 +740,7 @@ function getPeriodFormatted(period: string): Period {
   }
 }
 
-const sqlQuery = `SELECT *
-FROM transactions
-WHERE DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')`
+const sqlQuery = `SELECT * FROM transactions WHERE TIMESTAMP_TRUNC(dateField, MONTH) = TIMESTAMP_TRUNC(TIMESTAMP_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY), MONTH)`
 
-const filters = getDateFiltersFromSQLQuery({ sqlQuery, database: "postgresql" })
+const filters = getDateFiltersFromSQLQuery({ sqlQuery, database: "bigquery" })
 console.log(filters)

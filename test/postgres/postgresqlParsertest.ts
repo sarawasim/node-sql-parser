@@ -27,7 +27,7 @@ describe("Postgresql parser", () => {
     })
 
     expect(dateFilters).to.have.length(1)
-    // expect(dateFilters[0].type).to.be.eql("current")
+    expect(dateFilters[0].type).to.be.eql("current")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
@@ -59,7 +59,7 @@ describe("Postgresql parser", () => {
     })
 
     expect(dateFilters).to.have.length(1)
-    // expect(dateFilters[0].type).to.be.eql("last")
+    expect(dateFilters[0].type).to.be.eql("last")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
@@ -75,7 +75,7 @@ describe("Postgresql parser", () => {
     })
 
     expect(dateFilters).to.have.length(1)
-    // expect(dateFilters[0].type).to.be.eql("last")
+    expect(dateFilters[0].type).to.be.eql("last")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(30)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
@@ -91,7 +91,7 @@ describe("Postgresql parser", () => {
     })
 
     expect(dateFilters).to.have.length(1)
-    // expect(dateFilters[0].type).to.be.eql("previous")
+    expect(dateFilters[0].type).to.be.eql("previous")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("months")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
@@ -107,7 +107,7 @@ describe("Postgresql parser", () => {
     })
 
     expect(dateFilters).to.have.length(1)
-    // expect(dateFilters[0].type).to.be.eql("previous")
+    expect(dateFilters[0].type).to.be.eql("previous")
     expect(dateFilters[0].numberOfPeriods).to.be.eql(1)
     expect(dateFilters[0].period).to.be.eql("quarters")
     expect(dateFilters[0].field).to.be.eql("transaction_date")
