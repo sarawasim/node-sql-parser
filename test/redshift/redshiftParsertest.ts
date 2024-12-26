@@ -1,4 +1,4 @@
-import { getDateFiltersFromSQLQuery } from "../../index.js"
+import { getDateFiltersFromSQLQuery } from "../../src/dateFilterExtractor.js"
 
 import { expect } from "chai"
 import { describe, it } from "node:test"
